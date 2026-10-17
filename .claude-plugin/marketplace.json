@@ -1,0 +1,6 @@
+{
+  "name": "auto-compact",
+  "owner": { "name": "u6vu06Ou" },
+  "description": "Auto-compacts an idle conversation shortly before the prompt cache expires.",
+  "plugins": [{ "name": "auto-compact", "source": "./" }]
+}

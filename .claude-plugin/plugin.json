@@ -1,0 +1,6 @@
+{
+  "name": "auto-compact",
+  "version": "0.1.0",
+  "author": { "name": "u6vu06Ou" },
+  "description": "Auto-compacts an idle Claude Code conversation shortly before the prompt cache expires, so the next summarization request warms the cache instead of reprocessing the full history."
+}
