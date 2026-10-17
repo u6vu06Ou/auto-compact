@@ -43,8 +43,11 @@ async function load($: EngineInterface) {
 
 // The result of each attempt is written to ~/.claude/state/auto-compact/<sessionId>.json
 // so a status line script can show when the conversation was last compacted
-// (several windows may be open at once, hence one file per session). A write
-// that fails never affects the compact itself.
+// (several windows may be open at once, hence one file per session). The file
+// holds the most recent auto-compact that actually ran: while no compact has
+// run yet, a skipped or failed attempt is recorded, and afterwards a later
+// skip or failure leaves the last good record in place, so the display does
+// not blink to nothing. A write that fails never affects the compact itself.
 async function record($: EngineInterface, status: 'ok' | 'skip' | 'fail', detail?: string) {
   try {
     const home = (await $.env.get('USERPROFILE')) ?? (await $.env.get('HOME'))
@@ -52,9 +55,19 @@ async function record($: EngineInterface, status: 'ok' | 'skip' | 'fail', detail
     const id = await $.session.id()
     const at = await $.clock.now()
     const path = `${home.replace(/\\/g, '/')}/.claude/state/auto-compact/${id}.json`
+    if (status !== 'ok') {
+      // Keep the last good record: a skip or a failure is not an auto-compact,
+      // and failures are already surfaced in a toast, so nothing is swallowed.
+      try {
+        const prior = JSON.parse((await $.fs.read(path)) as string) as { at?: unknown; status?: unknown }
+        if (prior && prior.status === 'ok' && prior.at) return
+      } catch {
+        // No record yet - write this one.
+      }
+    }
     await $.fs.write(path, JSON.stringify({ at, status, detail: detail ?? null }))
   } catch {
-    // The status line only displays; a failed write is not worth blocking on.
+    // The status line only displays; a failed read or write is not worth blocking on.
   }
 }
 

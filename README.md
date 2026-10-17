@@ -26,7 +26,24 @@ At a Claude Code prompt:
 - **Custom endpoints**: compacting a conversation that runs on another provider buys nothing, so a custom endpoint only arms when the current model name looks like a Claude model (regex configurable).
 - **Fail-soft**: a status write that fails never affects the compact.
 
-The mod itself does not draw a countdown. The status feed is what a status line script reads to show when the conversation was last compacted - that display is the intended use, not verified behavior of this repo.
+## See when it compacted
+
+`statusline/auto-compact-statusline.js` prints `compacted 14:32` (local time of the last auto-compact) and nothing before the first one. No countdown - just when it last happened. Point your status line at it in `~/.claude/settings.json`:
+
+```json
+"statusLine": { "type": "command", "command": "node /path/to/auto-compact/statusline/auto-compact-statusline.js" }
+```
+
+Already have a status line script? `require` it and append its output:
+
+```js
+const { statusLine, homeDir } = require('/path/to/auto-compact/statusline/auto-compact-statusline.js')
+const seg = statusLine(homeDir(process.env), input.session_id) // '' until the first compact
+```
+
+## Built-in idle compaction vs this mod
+
+Claude Code 2.1.290+ (October 2026) also compacts idle conversations on its own, but only once a conversation is large (about 200K tokens by default; `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` changes that, `"idleCompaction": false` turns it off). This mod also covers shorter conversations. Both can be on; whichever fires first compacts, and the other then has little left to do.
 
 ## Tuning
 
@@ -35,11 +52,12 @@ The mod itself does not draw a countdown. The status feed is what a status line 
 | `AUTO_COMPACT_IDLE_MIN` | `55` | Idle minutes after the main loop's last API request before compacting |
 | `AUTO_COMPACT_PAID_MODELS` | `claude\|opus\|sonnet\|fable\|haiku` | Regex deciding which model names count as Anthropic on a custom endpoint |
 
+Make it yours: the idle time is the env var above. There is no "only compact above N tokens of context" threshold - if you want one, ask your AI to add it; it is a few lines.
+
 ## Limits
 
 - Requires a harness build whose compaction hooks can call into (`session.compact()`); on older builds the attempt fails and the failure is toasted.
 - The 55-minute margin assumes the one-hour cache lifetime; on the default five-minute lifetime the margin does not apply as a fact, only as a design assumption.
-- Shipping alternative: the harness itself compacts idle conversations natively via the `idleCompaction` setting (v2.1.290+), which may be all you need.
 - Multiple test runs were not run against every client; toast behavior depends on your client's UI kit.
 
 ## License
@@ -71,4 +89,10 @@ Claude Code 外掛：對話閒置約 55 分鐘、在提示快取過期前自動�
 | `AUTO_COMPACT_IDLE_MIN` | `55` | 主對話最後一次 API 後安靜這麼久才壓縮 |
 | `AUTO_COMPACT_PAID_MODELS` | `claude\|opus\|sonnet\|fable\|haiku` | 判定自訂端點上哪些模型名算 Anthropic |
 
-限制：倒數顯示不內建（狀態列要自己寫腳本讀 state 檔）；需要 hooks 能呼叫壓縮的 harness 版本；state 檔寫不進去不影響壓縮。harness 本身 v2.1.290+ 的內建 `idleCompaction` 設定可以取代這個外掛。授權 MIT。
+看上次什麼時候壓縮：`statusline/auto-compact-statusline.js` 會在狀態列印出 `compacted 14:32`（上次自動壓縮的時間），還沒壓過就什麼都不印。沒有倒數。設定方式見上面英文段。
+
+想自己調：閒置時間用上面的環境變數。「context 超過多大才壓」這個門檻沒有做，想要的話叫你的 AI 加，幾行就好。
+
+跟官方內建的差別：Claude Code 2.1.290 起（2026 年 10 月）自己也會在閒置時壓縮，但只壓很長的對話（預設約 20 萬 token，`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` 可改，`"idleCompaction": false` 可關）。這個外掛連短對話也壓。兩個可以同時開，誰先到誰壓。
+
+限制：需要 hooks 能呼叫壓縮的 harness 版本；state 檔寫不進去不影響壓縮。授權 MIT。

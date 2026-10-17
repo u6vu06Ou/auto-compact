@@ -96,3 +96,40 @@ test('a completed compact writes time and result for the status line', async ($,
   expect(writes[0].path.split('\\').join('/')).toBe('C:/Users/U/.claude/state/auto-compact/sess-1.json')
   expect(JSON.parse(writes[0].text).status).toBe('ok')
 })
+
+test('a later failed attempt leaves the last auto-compact record in place', async ($, on) => {
+  const writes: { path: string; text: string }[] = []
+  on('fs.write', (_: any, e: any) => { writes.push(e); return { value: undefined } })
+  on('session.id', () => ({ value: 'sess-1' }))
+  on('session.model', () => ({ value: 'claude-opus-5-5' }))
+  on('session.start', () => ({ cwd: '/x' }))
+  mock.env(on, { HOME: '/h' })
+  const clock = mock.clock(on)
+  let saved = '' // what the state file holds
+  on('fs.read', (_: any, _e: any) => ({ value: saved }))
+  let served = false
+  on('session.compact', (_: any, _e: any) => {
+    if (served) throw new Error('turn already running')
+    served = true
+    return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] }
+  })
+  on('turn.step', async function* (_: any, e: any) {
+    return { turnId: e.turnId, index: e.index, answer: 'ok', toolUses: [], stopReason: 'end_turn', usage: null }
+  })
+  await $.session.start({ source: 'startup', cwd: '/x', surface: 'terminal', isInteractive: true, startedAt: 0 })
+  const fire = async () => {
+    const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 3 })
+    for await (const _ of stream) { /* drain */ }
+  }
+  await fire()
+  await clock.advance(54 * MIN)
+  await clock.advance(1 * MIN) // due: the compact runs and writes the record
+  expect(served).toBe(true)
+  expect(writes.length).toBe(1)
+  saved = writes[0].text // the record stays as it was written
+  // served stays true: the second compact is refused (a turn is already running)
+  await fire()
+  await clock.advance(55 * MIN) // due: record sees the good record and keeps it
+  expect(writes.length).toBe(1)
+  expect(JSON.parse(writes[0].text).status).toBe('ok')
+})
